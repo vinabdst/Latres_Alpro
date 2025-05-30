@@ -1,0 +1,568 @@
+#include <iostream>
+#include <iomanip>
+using namespace std;
+
+void menu()
+{
+    cout << setfill('=') << setw(33) << " " << endl;
+    cout << setfill(' ') << setw(21) << "IDLIX Tube" << endl;
+    cout << setfill('=') << setw(33) << " " << endl;
+    cout << "1. Tambah Video" << endl;
+    cout << "2. Tampilkan Daftar Video" << endl;
+    cout << "3. Tambahkan ke Playlist" << endl;
+    cout << "4. Tonton video" << endl;
+    cout << "5. Riwayat Tontonan" << endl;
+    cout << "6. Hapus Video" << endl;
+    cout << "7. Undo Tindakan Terakhir" << endl;
+    cout << "8. Exit" << endl;
+}
+
+// Struct Video
+struct Video
+{
+    string judul;
+    int durasi;
+    string status;
+};
+
+/*====================================================================================*/
+struct UndoData {
+    string aksi;
+    Video dataVideo;
+};
+
+struct UndoNode
+{
+    UndoData data;
+    UndoNode* next;
+};
+
+UndoNode* undoTop = nullptr;
+
+void pushUndo(UndoData data) {
+    UndoNode* newNode = new UndoNode;
+    newNode->data = data;
+    newNode->next = undoTop;
+    undoTop = newNode;
+}
+
+bool popUndo(UndoData& data) {
+    if (undoTop == nullptr) return false;
+    data = undoTop->data;
+    UndoNode* temp = undoTop;
+    undoTop = undoTop->next;
+    delete temp;
+    return true;
+}
+/*====================================================================================*/
+
+// Struct PTB
+struct ptbNode
+{
+    Video data;
+    ptbNode *left, *right;
+
+    // Constuctor
+    ptbNode(Video v) {
+        data = v;
+        left = right = nullptr;
+    }
+};
+
+ptbNode *root = NULL;
+
+// Cek PTB Ada yg sama gak?
+bool cekPtb(ptbNode* root, string judul){
+    if (root == nullptr) return false;
+    if (root->data.judul == judul) return true;
+    if (judul < root->data.judul)
+        return cekPtb(root->left, judul);
+    else
+        return cekPtb(root->right, judul);
+}
+
+// Insert PTB
+ptbNode* insertVideo(ptbNode*& root, Video v){
+    if (root == nullptr){
+        cout << "Video " << v.judul << " berhasil ditambahkan." << endl;
+        return new ptbNode(v);
+    }
+
+    if (v.judul < root->data.judul)
+        root->left = insertVideo(root->left, v);
+    else if (v.judul > root->data.judul)
+        root->right = insertVideo(root->right, v);
+    else
+        cout << "Video sudah ada." << endl;
+
+    return root; 
+}
+
+// Input Video (User)
+void tambahVideo() {
+    Video v;
+    cout << "Masukkan Judul Video: "; getline(cin, v.judul);
+    if (cekPtb(root, v.judul)) {
+    
+        cout << "Video sudah ada." << endl;
+        return;
+    }
+    cout << "Masukkan Durasi Video (menit): "; cin >> v.durasi; cin.ignore();
+    v.status = "tersedia";
+    root = insertVideo(root, v);
+
+    // Simpan aksi Undo
+    UndoData undoData;
+    undoData.aksi = "tambah_video";
+    undoData.dataVideo = v; // video yang baru ditambah
+    pushUndo(undoData);
+
+}
+
+/*====================================================================================*/
+// Tampilkan Video (Asc)
+void inOrder(ptbNode* root) {
+    if (root != nullptr){
+        inOrder(root->left);
+        cout << "Judul  : " << root->data.judul << endl;
+        cout << "Durasi : " << root->data.durasi << " menit" << endl;
+        cout << "Status : " << root->data.status << endl;
+        cout << setfill(' ') << setw(50) << " " << endl;
+        inOrder(root->right);
+    }
+}
+
+// Cari Video
+ptbNode* search(ptbNode *root, string judul)
+{
+    ptbNode *bantu = root;
+    while (bantu)
+    {
+        if (judul == bantu->data.judul){
+            return bantu;
+        }
+        if (judul < bantu->data.judul)
+            bantu = bantu->left;            
+        else
+            bantu = bantu->right;
+    }
+    cout << judul << " tidak ditemukan." << endl;
+    return nullptr;
+}
+
+// Tampil + Cari
+void tampilCari(){
+    cout << "===== DAFTAR VIDEO =====" << endl;
+    if (root == nullptr){
+        cout << "Video kosong." << endl;
+        return;
+    }
+    inOrder(root);
+
+    char opsi;
+    cout << "Apakah Anda ingin mencari video? (y/t): "; cin >> opsi;
+
+    if (opsi == 'y' || opsi == 'Y')
+    {
+        cin.ignore();
+        string cari;
+        cout << "Masukkan judul video yang ingin dicari: "; getline(cin, cari);
+
+        ptbNode* hasil = search(root, cari);
+        if (hasil != nullptr) {
+            cout << "Video ditemukan!\n";
+            cout << "Judul  : " << hasil->data.judul << endl;
+            cout << "Durasi : " << hasil->data.durasi << " menit" << endl;
+            cout << "Status : " << hasil->data.status << endl;
+            cout << setfill(' ') << setw(50) << " " << endl;
+        } else {
+            cout << "Video tidak ditemukan." << endl;
+        }
+    }
+}
+/*====================================================================================*/
+
+/*====================================================================================*/
+// Struct Queue
+struct Queue
+{
+    Video data;
+    Queue* next;
+};
+
+Queue *depan, *belakang;
+
+void buatQueue(){
+    depan = nullptr;
+    belakang = nullptr;
+}
+
+int queueKosong(){
+    return (depan == nullptr);
+}
+
+// Tambah ke Playlist
+void enqueue(Video v){
+    Queue* newNode = new Queue;
+    newNode->data = v;
+    newNode->next = nullptr;
+
+    if (depan == nullptr){
+        depan = newNode;
+        belakang = newNode;
+        depan->data.status = "sedang diputar";  // ubah status di node pertama
+    } else {
+        belakang->next = newNode;
+        belakang = newNode;
+    }
+    belakang = newNode;
+}
+
+// Input User Tambah ke Playlist
+void tambahKePlaylist() {
+    if (root == nullptr) {
+        cout << "Belum ada video yang tersedia." << endl;
+        return;
+    }
+    string judul;
+    cout << "Masukkan judul video yang ingin ditambahkan ke playlist: "; getline(cin, judul);
+    ptbNode* video = search(root, judul);
+
+    if (video == nullptr){
+        cout << "Video tidak ditemukan." << endl;
+        return;
+    }
+
+    if (video->data.status != "tersedia") {
+        cout << "Video tidak dapat ditambahkan karena statusnya " << video->data.status << "." << endl;
+        return;
+    }
+
+    if (depan == nullptr) {
+        video->data.status = "sedang diputar";
+    } else {
+        video->data.status = "dalam antrean";
+    }
+    enqueue(video->data);
+
+    // Simpan undo
+    UndoData undoData;
+    undoData.aksi = "tambah_playlist";
+    undoData.dataVideo = video->data;
+    pushUndo(undoData);
+
+    cout << "Video " << video->data.judul << "berhasil ditambahkan ke playlist." << endl;
+}
+/*====================================================================================*/
+
+/*====================================================================================*/
+struct RiwayatNode
+{
+    Video data;
+    RiwayatNode* next;
+};
+
+RiwayatNode *awalRiwayat, *topRiwayat;
+
+void buatstack(){
+    awalRiwayat = topRiwayat = nullptr;
+}
+
+bool stackkosong(){
+    return awalRiwayat == nullptr;
+}
+
+// Tambahkan Video yg udh ditonton ke Riwayat
+void pushRiwayat(Video v)
+{
+    RiwayatNode* newNode = new RiwayatNode();
+    newNode->data = v;
+    newNode->next = nullptr;
+
+    if (stackkosong()){
+        awalRiwayat = topRiwayat = newNode;
+    } else {
+        topRiwayat->next = newNode;
+        topRiwayat = newNode;
+    }
+}
+/*====================================================================================*/
+
+// Tonton Video
+void tontonVideo(){
+    if (queueKosong()){
+        cout << "Playlist kosong." << endl;
+        return;
+    }
+
+    // Ambil video yang sedang diputar (depan)
+    Video vid = depan->data;
+
+    // Simpan undo sebelum modifikasi
+    UndoData undoData;
+    undoData.aksi = "tonton_video";
+    undoData.dataVideo = vid;
+    pushUndo(undoData);
+
+    // Simpan ke riwayat
+    pushRiwayat(vid);
+
+    // Ganti status jadi tersedia
+    ptbNode* video = search(root, vid.judul);
+    if (video != nullptr){
+        video->data.status = "tersedia";
+    }
+
+    // Hapus dari playlist
+    Queue* hapus = depan;
+    depan = depan->next;
+    delete hapus;
+
+    // Kalo masih ada yang antre, ganti status jadi "sedang diputar"
+    if (depan != nullptr){
+        ptbNode* nextVid = search(root, depan->data.judul);
+        if (nextVid != nullptr) {
+            nextVid->data.status = "sedang diputar";
+            depan->data.status = "sedang diputar";
+        }
+    }
+    cout << "Video telah selesai diputar." << endl;
+}
+
+// Riwayat Tontonan
+void riwayatTontonan()
+{
+    if (stackkosong()) {
+        cout << "Riwayat kosong." << endl;
+        return;
+    }
+
+    RiwayatNode* bantu = awalRiwayat;
+    cout << "===== RIWAYAT TONTONAN =====" << endl;
+    int no = 1;
+    while (bantu != NULL) {
+        cout << no++ << ". Judul         : " << bantu->data.judul << endl;
+        cout         << "   Durasi   : " << bantu->data.durasi << " menit" << endl;
+        cout << setfill(' ') << setw(50) << " " << endl;
+        bantu = bantu->next;
+    }
+}
+
+/*====================================================================================*/
+// Delete Node di Playlist
+void dequeue(string judul){
+    Queue *bantu = depan, *prev = nullptr;
+    while (bantu != nullptr) {
+        if (bantu->data.judul == judul) {
+            if (bantu == depan) {
+                depan = depan->next;
+                delete bantu;
+            } else {
+                prev->next = bantu->next;
+                if (bantu == belakang) {
+                    belakang = prev;
+                }
+                delete bantu;
+            }
+            return;
+        }
+        prev = bantu;
+        bantu = bantu->next;
+    }
+}
+
+// Delete Node di PTB
+ptbNode* deleteNode(ptbNode* root, string judul)
+{
+    if (root == nullptr) return nullptr; // tandanya pohon kosong
+
+    if(judul < root->data.judul){
+        root->left = deleteNode(root->left, judul);
+    }
+    else if(judul > root->data.judul){
+        root->right = deleteNode(root->right, judul);
+    } else {
+        // Ditemukan node yang akan dihapus
+        if (root->left == nullptr) {
+            ptbNode* temp = root->right;
+            delete root;
+            return temp;
+        }
+        else if (root->right == nullptr) {
+            ptbNode* temp = root->left;
+            delete root;
+            return temp;
+        } else {
+            // Dua anak, cari pengganti terkecil di subtree kanan
+            ptbNode *pengganti = root->right;
+            while(pengganti->left != nullptr)
+                pengganti = pengganti->left;
+            root->data = pengganti->data;
+            root->right = deleteNode(root->right, pengganti->data.judul);
+        }
+        return root;
+    }
+    return root;
+}
+
+// Hapus Video (User input)
+void hapusVideo() {
+    if (root == nullptr) {
+        cout << "Tidak ada video untuk dihapus." << endl;
+        return;
+    }
+
+    string judul;
+    cout << "Masukkan judul video yang ingin dihapus: "; getline(cin, judul);
+
+    ptbNode* target = search(root, judul);
+    if (target == nullptr) {
+        cout << "Video tidak ditemukan." << endl;
+        return;
+    }
+
+    string status = target->data.status;
+
+    if (status == "sedang diputar" || status == "dalam antrean") {
+        cout << "Video sedang " << status << ". Yakin untuk tetap menghapus? (y/t): ";
+        char konfirmasi;
+        cin >> konfirmasi;
+        cin.ignore(); // untuk buang newline setelah input char
+
+        if (konfirmasi != 'y' && konfirmasi != 'Y') {
+            cout << "Penghapusan dibatalkan." << endl;
+            return;
+        }
+    }
+
+    // Simpan data undo sebelum hapus
+    UndoData undoData;
+    undoData.aksi = "hapus_video";
+    undoData.dataVideo = target->data;
+    pushUndo(undoData);
+
+    dequeue(judul); // Hapus dari playlist jika ada
+    root = deleteNode(root, judul);  // Hapus dari PTB
+    cout << "Video " << judul << " berhasil dihapus dari sistem." << endl;
+}
+/*====================================================================================*/
+
+void undo() {
+    if (undoTop == nullptr) {
+        cout << "Tidak ada aksi yang bisa di-undo." << endl;
+        return;
+    }
+
+    UndoData (aksi);
+    popUndo(aksi);
+
+    if (aksi.aksi == "tambah_video") {
+        // Undo tambah video = hapus video
+        root = deleteNode(root, aksi.dataVideo.judul);
+        cout << "Undo: video " << aksi.dataVideo.judul << " dibatalkan penambahannya." << endl;
+    }
+    else if (aksi.aksi == "hapus_video") {
+        // Undo hapus video = tambah video kembali
+        root = insertVideo(root, aksi.dataVideo);
+        cout << "Undo: video " << aksi.dataVideo.judul << " dikembalikan." << endl;
+    }
+    else if (aksi.aksi == "tambah_playlist") {
+        // Hapus dari playlist
+        Queue* bantu = depan;
+        Queue* prev = nullptr;
+        while (bantu != nullptr) {
+            if (bantu->data.judul == aksi.dataVideo.judul) {
+                if (prev == nullptr) {
+                    depan = bantu->next;
+                    if (depan == nullptr) belakang = nullptr;
+                } else {
+                    prev->next = bantu->next;
+                    if (bantu == belakang) belakang = prev;
+                }
+                delete bantu;
+                break;
+            }
+            prev = bantu;
+            bantu = bantu->next;
+        }
+        
+        // Cari video di PTB dan kembalikan statusnya ke "tersedia"
+        ptbNode* node = search(root, aksi.dataVideo.judul);
+        if (node != nullptr) node->data.status = "tersedia";
+
+        cout << "Undo: video " << aksi.dataVideo.judul << " dihapus dari playlist." << endl;
+    }
+    else if (aksi.aksi == "tonton_video") {
+        // Kembalikan ke depan playlist
+        Queue* baru = new Queue;
+        baru->data = aksi.dataVideo;
+        baru->next = depan;
+        depan = baru;
+        if (belakang == nullptr) belakang = baru;
+
+        // Hapus dari riwayat
+        if (topRiwayat != nullptr && topRiwayat->data.judul == aksi.dataVideo.judul) {
+            RiwayatNode* hapus = topRiwayat;
+            topRiwayat = topRiwayat->next;
+            delete hapus;
+        }
+
+        // Ubah status
+        ptbNode* Node = search(root, aksi.dataVideo.judul);
+        if (Node != nullptr) Node->data.status = "dalam antrian";
+
+        cout << "Undo: video " << aksi.dataVideo.judul << " dikembalikan ke playlist & dihapus dari riwayat." << endl;
+    }
+    else {
+        cout << "Aksi undo tidak dikenali." << endl;
+    }
+}
+
+int main()
+{
+    root = nullptr;
+    buatQueue();
+    buatstack();
+    int pilihan;
+    do
+    {
+        menu();
+        cout << setfill(' ') << setw(50) << " " << endl;
+        cout << "Pilih Menu: "; cin >> pilihan; cin.ignore();
+        cout << setfill(' ') << setw(50) << " " << endl;
+        switch (pilihan)
+        {
+        case 1:
+            tambahVideo();
+            break;
+        case 2:
+            tampilCari();
+            break;
+        case 3:
+            tambahKePlaylist();
+            break;
+        case 4:
+            tontonVideo();
+            break;
+        case 5:
+            riwayatTontonan();
+            break;
+        case 6:
+            hapusVideo();
+            break;
+        case 7:
+            undo();
+            break;
+        case 8:
+            cout << "TERIMA KASIH TELAH MENGGUNAKAN PROGRAM INI!" << endl;
+            exit (0);
+            break;
+        
+        default:
+            cout << "Pilihan Anda tidak valid!" << endl;
+            break;
+        }
+    } while (pilihan != 8);
+    
+    return 0;
+}
